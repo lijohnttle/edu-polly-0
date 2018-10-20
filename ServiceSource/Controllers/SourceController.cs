@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -11,6 +13,7 @@ namespace ServiceSource.Controllers
     {
         private readonly HttpClient _httpClient;
         private readonly IAsyncPolicy<HttpResponseMessage> _httpRetryPolicy;
+        private readonly IAsyncPolicy<HttpResponseMessage> _httpRequestFallbackPolicy;
 
 
         public SourceController()
@@ -22,7 +25,20 @@ namespace ServiceSource.Controllers
 
             _httpRetryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt) / 2));
+                .WaitAndRetryAsync(
+                    3,
+                    retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt) / 2),
+                    onRetry: (response, retryMarker) =>
+                    {
+                        Trace.WriteLine($"Retry #{retryMarker}...");
+                    });
+
+            _httpRequestFallbackPolicy = Policy
+                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+                .FallbackAsync(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("Fallback")
+                });
         }
 
 
@@ -36,10 +52,26 @@ namespace ServiceSource.Controllers
 
             if (response.IsSuccessStatusCode)
             {
-                return Ok("Success");
+                return Ok(await response.Content.ReadAsStringAsync());
             }
 
-            return StatusCode((int) response.StatusCode, response.Content.ReadAsStringAsync());
+            return StatusCode((int) response.StatusCode, await response.Content.ReadAsStringAsync());
+        }
+
+        [HttpGet("Fallback")]
+        public async Task<IActionResult> Fallback()
+        {
+            const string requestEndpoint = "retry";
+
+            var response = await _httpRequestFallbackPolicy.ExecuteAsync(() =>
+                _httpClient.GetAsync(requestEndpoint));
+
+            if (response.IsSuccessStatusCode)
+            {
+                return Ok(await response.Content.ReadAsStringAsync());
+            }
+
+            return StatusCode((int)response.StatusCode, await response.Content.ReadAsStringAsync());
         }
     }
 }
