@@ -3,7 +3,6 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Polly;
-using Polly.Retry;
 
 namespace ServiceSource.Controllers
 {
@@ -11,7 +10,7 @@ namespace ServiceSource.Controllers
     public class SourceController : ControllerBase
     {
         private readonly HttpClient _httpClient;
-        private readonly RetryPolicy<HttpResponseMessage> _httpRetryPolicy;
+        private readonly IAsyncPolicy<HttpResponseMessage> _httpRetryPolicy;
 
 
         public SourceController()
@@ -23,7 +22,7 @@ namespace ServiceSource.Controllers
 
             _httpRetryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .RetryAsync(3);
+                .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt) / 2));
         }
 
 
