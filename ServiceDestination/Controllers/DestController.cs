@@ -22,5 +22,13 @@ namespace ServiceDestination.Controllers
 
             return StatusCode((int) HttpStatusCode.InternalServerError, "Something went wrong");
         }
+
+        [HttpGet("Fail")]
+        public async Task<IActionResult> Fail()
+        {
+            await Task.Delay(100);
+
+            return StatusCode((int)HttpStatusCode.InternalServerError, "Something went wrong");
+        }
     }
 }

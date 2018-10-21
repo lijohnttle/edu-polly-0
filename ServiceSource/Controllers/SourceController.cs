@@ -14,6 +14,8 @@ namespace ServiceSource.Controllers
         private readonly HttpClient _httpClient;
         private readonly IAsyncPolicy<HttpResponseMessage> _httpRetryPolicy;
         private readonly IAsyncPolicy<HttpResponseMessage> _httpRequestFallbackPolicy;
+        private readonly IAsyncPolicy<HttpResponseMessage> _timeoutPolicy;
+        private readonly IAsyncPolicy<HttpResponseMessage> _wrapPolicy;
 
 
         public SourceController()
@@ -22,6 +24,8 @@ namespace ServiceSource.Controllers
             {
                 BaseAddress = new Uri("http://localhost:5001")
             };
+
+            _timeoutPolicy = Policy.TimeoutAsync<HttpResponseMessage>(1);
 
             _httpRetryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
@@ -39,6 +43,8 @@ namespace ServiceSource.Controllers
                 {
                     Content = new StringContent("Fallback")
                 });
+
+            _wrapPolicy = Policy.WrapAsync(_httpRequestFallbackPolicy, _httpRetryPolicy, _timeoutPolicy);
         }
 
 
@@ -70,6 +76,17 @@ namespace ServiceSource.Controllers
             {
                 return Ok(await response.Content.ReadAsStringAsync());
             }
+
+            return StatusCode((int)response.StatusCode, await response.Content.ReadAsStringAsync());
+        }
+
+        [HttpGet("Wrap")]
+        public async Task<IActionResult> Wrap()
+        {
+            const string requestEndpoint = "fail";
+
+            var response = await _wrapPolicy.ExecuteAsync(() =>
+                _httpClient.GetAsync(requestEndpoint));
 
             return StatusCode((int)response.StatusCode, await response.Content.ReadAsStringAsync());
         }
